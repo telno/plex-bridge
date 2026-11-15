@@ -34,7 +34,11 @@ done < <(env -0)
 body+="}}"
 
 fifo=$(mktemp -u /tmp/plexstub.XXXXXX); mkfifo "$fifo"
-curl -sSN -X POST -H "Authorization: Bearer ${BRIDGE_TOKEN}" --data-binary @- "$URL/run" <<<"$body" > "$fifo" &
+# Plex stops a job (seek, stop, quality change) with SIGKILL, which the trap below cannot catch. Without --pdeathsig the
+# orphaned curl would keep the connection open, the runner would never see a disconnect, and the host transcoder would
+# run on until its own callbacks to Plex fail. With it, the kernel ends curl with this script and the runner kills the job.
+PDEATH=(); command -v setpriv >/dev/null 2>&1 && PDEATH=(setpriv --pdeathsig TERM)
+"${PDEATH[@]}" curl -sSN -X POST -H "Authorization: Bearer ${BRIDGE_TOKEN}" --data-binary @- "$URL/run" <<<"$body" > "$fifo" &
 CURL=$!
 trap 'kill $CURL 2>/dev/null; rm -f "$fifo"; exit 143' TERM INT HUP
 code=""; first=""; n=0

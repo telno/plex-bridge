@@ -93,7 +93,10 @@ the job's `transforms` list.
 | `eae-service:host` | `eac3_eae`/`truehd_eae` + `EAE_ROOT=<container path>` | host `EasyAudioEncoder` service, host `EAE_ROOT` | E-AC3/TrueHD decode goes through Plex's EAE helper service and a watch folder. Plex runs a Linux copy in the container; the Mac transcoder needs the Mac copy with a host-side folder. Started on demand, shared, logs to `runner/logs/eae.log`. |
 | `fallback:software(attemptN exit=E)` | — | same command without `-hwaccel`, `-allow_sw 1` | If a hardware attempt fails within 15 s the runner retries once in software instead of failing playback. Should be rare; watch for it in the log. |
 
-Other behaviour: `cwd` is mapped from `/transcode/…` (container) to the same folder on the host; the
+Other behaviour: `cwd` is mapped from `/transcode/…` (container) to the same folder on the host; when
+Plex kills a job (it uses SIGKILL on every seek/stop) the stub's connection to the runner dies with it and the runner
+kills the host transcoder (`killed_by: client-disconnect` in the log; an `exit 254` with `killed_by: null` means the
+transcoder ended itself after Plex answered its callbacks with 404, which is what happened before this was added); the
 stub falls back to the in-container software transcoder if the runner answers `busy`, `rejected`,
 `unauthorized` or is unreachable; video that Plex *copies* (direct stream) is passed through
 unmodified.

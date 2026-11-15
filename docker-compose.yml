@@ -20,8 +20,8 @@ services:
       BRIDGE_TOKEN: ${BRIDGE_TOKEN:?run ./setup-host.sh to generate BRIDGE_TOKEN}
     volumes:
       - plex_config:/config           # seeded once from the macOS install by ./seed-config.sh
-      # media: read-only, mounted at the same absolute path as on the host (library paths stay valid)
-      - ${PLEX_MEDIA_DIR:?set PLEX_MEDIA_DIR in .env}:${PLEX_MEDIA_DIR}:ro
+      # media roots: read-only bind mounts at the same absolute paths as on the host come from docker-compose.media.yml,
+      # which ./setup-host.sh generates from PLEX_MEDIA_DIRS (COMPOSE_FILE in .env loads it automatically)
       # transcode scratch dir shared with the host transcoder (same absolute path on both sides)
       - ${PLEX_PROJECT_DIR:?run ./setup-host.sh to set PLEX_PROJECT_DIR}/transcode:/transcode
       - ${PLEX_PROJECT_DIR}/transcode:${PLEX_PROJECT_DIR}/transcode

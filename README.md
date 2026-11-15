@@ -36,12 +36,12 @@ the same API) but is untested. The Plex version is pinned (`PLEX_VERSION` in `.e
 | `setup-host.sh` | Creates/fills `.env`, host scratch dirs, copies the macOS codec bundles, generates the shared secret, renders and installs the LaunchAgents (`--daily-review` adds the nightly review). |
 | `launchd/*.plist.in` | LaunchAgent templates (`@PROJECT@` is filled in by `setup-host.sh`). |
 | `ops/` | The nightly review: digest, wrapper, prompt, Mail.app sender (see [Daily review](#daily-review-automated)). |
-| `.env`, `ops/mail.conf`, `host-support/`, `transcode/`, `runner/logs/`, `reports/` | Your configuration, secrets and runtime state; git-ignored. |
+| `.env`, `docker-compose.media.yml`, `ops/mail.conf`, `host-support/`, `transcode/`, `runner/logs/`, `reports/` | Your configuration, generated files, secrets and runtime state; git-ignored. |
 
 ## Setup
 
 1. Install OrbStack and **Plex Media Server.app** (only its `Plex Transcoder` binary is used; if it has never run, launch it once so it downloads its codec bundles, then quit it and remove it from Login Items).
-2. `./setup-host.sh` — creates `.env` from `.env.example` and fills in what it can detect (project path, LAN IP, time zone, uid/gid, a random `BRIDGE_TOKEN`). **Edit `.env` and set `PLEX_MEDIA_DIR`**, then re-run it: it checks the Plex version, copies the macOS codec bundles, and installs and starts the runner LaunchAgent. (`--daily-review` also installs the nightly review.)
+2. `./setup-host.sh` — creates `.env` from `.env.example` and fills in what it can detect (project path, LAN IP, time zone, uid/gid, a random `BRIDGE_TOKEN`). **Edit `.env` and set `PLEX_MEDIA_DIRS`** (one or more media roots), then re-run it: it checks the Plex version, copies the macOS codec bundles, and installs and starts the runner LaunchAgent. (`--daily-review` also installs the nightly review.)
 3. `./seed-config.sh` — one-time copy of an existing native Plex config into the `plex_config` volume (refuses if native Plex is running or the volume is already seeded; `--force` overwrites). Skip it for a fresh server; you will claim it in the web UI.
 4. `docker compose up -d --build`.
 
@@ -51,7 +51,8 @@ Everything site-specific lives in one git-ignored `.env` (template: `.env.exampl
 
 | Variable | Meaning |
 |---|---|
-| `PLEX_MEDIA_DIR` | Media root, mounted **read-only** at the same absolute path in the container. More roots: a git-ignored `docker-compose.override.yml`. |
+| `PLEX_MEDIA_DIRS` | One or more media roots, `:`-separated like `PATH` (e.g. `/Volumes/Movies:/Volumes/TV:/Users/me/Videos`; paths containing `:` are not supported). Each is mounted **read-only** at the same absolute path in the container, readable by the runner and the sandbox, and nothing else is. `setup-host.sh` generates `docker-compose.media.yml` from it, so **re-run `./setup-host.sh` and `docker compose up -d` after changing the list**. The old single `PLEX_MEDIA_DIR` is migrated automatically. |
+| `COMPOSE_FILE` | Makes every `docker compose` command load the generated media mounts (`docker-compose.yml:docker-compose.media.yml`). Append your own compose files here for other customisations. |
 | `PLEX_LAN_IP` | This Mac's LAN IP, advertised to Plex clients. |
 | `TZ`, `PLEX_UID`, `PLEX_GID` | Container time zone; uid/gid of the macOS user so the shared transcode directory is writable by both sides. |
 | `PLEX_VERSION` | Plex version/tag (`<version>-<build>`); must equal the installed macOS app's version. |
@@ -64,7 +65,7 @@ The nightly review's recipient and sender are in `ops/mail.conf` (template: `ops
 
 ## Security model
 
-* **Container:** non-default user (`PLEX_UID`/`PLEX_GID`, matching the Mac user so the shared transcode dir is writable by both), `cap_drop: ALL` plus six capabilities, `no-new-privileges`. Media is mounted **read-only** at the same absolute path as on the host. Config lives in a Docker volume, not on the Mac filesystem.
+* **Container:** non-default user (`PLEX_UID`/`PLEX_GID`, matching the Mac user so the shared transcode dir is writable by both), `cap_drop: ALL` plus six capabilities, `no-new-privileges`. Every media root is mounted **read-only** at the same absolute path as on the host. Config lives in a Docker volume, not on the Mac filesystem.
 * **Runner:** listens on `127.0.0.1` only (containers reach it via `host.docker.internal`), requires a bearer token (`BRIDGE_TOKEN` from `.env`, passed to the container as an environment variable), allows only the Plex Transcoder binary, rejects any path outside media/transcode/codecs and any URL other than `http://127.0.0.1:32400`, blocks dangerous ffmpeg protocols, scrubs the environment to an allow-list, limits concurrent jobs (8), kills jobs if the container disconnects, and kills orphaned transcoders when it restarts.
 * **Transcoder sandbox (`sandbox-exec`):** loopback network only, cannot read `/Users` except the project's support files, cannot read other volumes, writes only to `transcode/` and its scratch home. A compromised container that abuses the runner therefore cannot read your home directory or reach the internet through it.
 * Residual risk: the container can still make the host run the transcoder on files under the media directory, and the runner is a new host-side surface. The attack surface this removes is Plex's network-facing code (it runs in the container, not as you on the host).

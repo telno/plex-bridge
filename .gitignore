@@ -13,3 +13,4 @@ reports/
 __pycache__/
 *.pyc
 .DS_Store
+docker-compose.media.yml

@@ -27,7 +27,8 @@ import envconf
 # variables override it. The project directory is derived from where this file lives.
 PROJECT   = os.environ.get("PLEX_PROJECT_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 envconf.load(PROJECT)
-MEDIA     = os.environ.get("PLEX_MEDIA_DIR", "")
+# one or more media roots, colon-separated (PLEX_MEDIA_DIR is the legacy single-root alias)
+MEDIA_DIRS = envconf.parse_media_dirs(os.environ.get("PLEX_MEDIA_DIRS") or os.environ.get("PLEX_MEDIA_DIR", ""))
 TRANSCODE = os.path.join(PROJECT, "transcode")
 SUPPORT   = os.path.join(PROJECT, "host-support")
 CODECS    = os.path.join(SUPPORT, "Codecs")
@@ -41,7 +42,7 @@ JOBDIR    = os.path.join(LOGDIR, "jobs")
 TOKEN     = os.environ.get("BRIDGE_TOKEN", "")
 TRACE     = os.environ.get("PLEX_RUNNER_TRACE") == "1"     # raise ffmpeg/Plex log levels for every job
 
-READ_ROOTS = [os.path.realpath(p) for p in (MEDIA or "/nonexistent-media-dir", TRANSCODE, CODECS)]
+READ_ROOTS = [os.path.realpath(p) for p in list(MEDIA_DIRS or ["/nonexistent-media-dir"]) + [TRANSCODE, CODECS]]
 URL_OK   = re.compile(r"^https?://(127\.0\.0\.1|localhost):32400(/|$)")
 PROTO    = re.compile(r"^(file|concat|pipe|subfile|tcp|udp|rtp|rtsp|ftp|smb|data|unix|crypto|cache|async|hls|http|https|tls|sftp|ssh|gopher):", re.I)
 ENV_PASS = re.compile(r"^(X_PLEX_[A-Z0-9_]+|PLEX_[A-Z0-9_]+|TZ|LANG|LC_[A-Z]+)$")
@@ -227,7 +228,7 @@ def ensure_eae():
         if not running:
             os.makedirs(EAE_ROOT, exist_ok=True)
             logf = open(os.path.join(LOGDIR, "eae.log"), "ab")
-            cmd = ["/usr/bin/sandbox-exec", "-D", "PROJECT=" + PROJECT, "-D", "MEDIA=" + MEDIA, "-D", "TRANSCODE=" + TRANSCODE,
+            cmd = ["/usr/bin/sandbox-exec", "-D", "PROJECT=" + PROJECT, "-D", "TRANSCODE=" + TRANSCODE,
                    "-f", PROFILE, b]
             _eae["proc"] = subprocess.Popen(cmd, cwd=EAE_ROOT, env={"PATH": "/usr/bin:/bin", "HOME": os.path.join(SUPPORT, "home")},
                                             stdin=subprocess.DEVNULL, stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
@@ -361,7 +362,7 @@ class H(BaseHTTPRequestHandler):
             log("RUN  job=%s session=%s transforms=%s video=%s" % (jobid, rec["session"], transforms or "none", rec["run_summary"]["video"]))
 
             def build_cmd(av):
-                return ["/usr/bin/sandbox-exec", "-D", "PROJECT=" + PROJECT, "-D", "MEDIA=" + MEDIA,
+                return ["/usr/bin/sandbox-exec", "-D", "PROJECT=" + PROJECT,
                         "-D", "TRANSCODE=" + TRANSCODE, "-f", PROFILE, TRANSCODER] + av
             holder, attempts = {"proc": None}, []
             self.send_response(200); self.send_header("Content-Type", "application/octet-stream"); self.end_headers()
@@ -455,19 +456,22 @@ class H(BaseHTTPRequestHandler):
 def render_profile():
     """Fill the seatbelt template: allow metadata (lstat) on the project/media dirs and all their parents."""
     anc = set()
-    for p in (PROJECT, MEDIA):
+    for p in [PROJECT] + MEDIA_DIRS:
         for q in {p, os.path.realpath(p)}:
             anc.add(q)
             d = os.path.dirname(q)
             while d and d != "/": anc.add(d); d = os.path.dirname(d)
     esc = lambda x: x.replace("\\", "\\\\").replace('"', '\\"')
     rule = " ".join('(literal "%s")' % esc(a) for a in sorted(anc))
+    media = " ".join('(subpath "%s")' % esc(m) for m in sorted({q for p in MEDIA_DIRS for q in (p, os.path.realpath(p))}))
     os.makedirs(SUPPORT, exist_ok=True)
-    with open(PROFILE, "w") as f: f.write(open(PROFILE_TEMPLATE).read().replace(";;ANCESTORS;;", rule))
+    with open(PROFILE_TEMPLATE) as t: text = t.read().replace(";;ANCESTORS;;", rule).replace(";;MEDIA_ROOTS;;", media)
+    with open(PROFILE, "w") as f: f.write(text)
 
 def validate_config():
     problems = []
-    if not MEDIA or not os.path.isdir(MEDIA): problems.append("PLEX_MEDIA_DIR is not set to an existing directory (see .env.example)")
+    if not MEDIA_DIRS: problems.append("PLEX_MEDIA_DIRS is empty (see .env.example)")
+    problems += ["media directory does not exist: " + d for d in MEDIA_DIRS if not os.path.isdir(d)]
     if not TOKEN: problems.append("BRIDGE_TOKEN is empty (run ./setup-host.sh)")
     if not os.path.exists(TRANSCODER): problems.append("Plex Media Server.app not found in /Applications")
     return problems

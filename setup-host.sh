@@ -6,7 +6,7 @@
 #   ./setup-host.sh --daily-review   additionally install the nightly review LaunchAgent (see README)
 #
 # Prerequisites: "Plex Media Server.app" in /Applications (installed, never launched long-term: only its Plex Transcoder
-# is used) and Docker/OrbStack. Edit .env (at least PLEX_MEDIA_DIR) before the first full run.
+# is used) and Docker/OrbStack. Edit .env (at least PLEX_MEDIA_DIRS) before the first full run.
 set -euo pipefail
 cd "$(dirname "$0")"
 PROJECT="$(pwd)"
@@ -40,10 +40,25 @@ if [ "$(getv PLEX_LAN_IP)" = "192.168.1.10" ]; then ip="$(ipconfig getifaddr en0
 if [ -z "$(getv BRIDGE_TOKEN)" ]; then setv BRIDGE_TOKEN "$(head -c 32 /dev/urandom | base64 | tr -d '\n=/+')"; echo "generated BRIDGE_TOKEN"; fi
 chmod 600 .env
 
-MEDIA="$(getv PLEX_MEDIA_DIR)"
-if [ -z "$MEDIA" ] || [ "$MEDIA" = "$EXAMPLE_MEDIA" ] || [ ! -d "$MEDIA" ]; then
-  echo "Edit .env and set PLEX_MEDIA_DIR to an existing media directory, then re-run ./setup-host.sh"; exit 1
+# media roots: PLEX_MEDIA_DIRS is a ":"-separated list (the old single PLEX_MEDIA_DIR is migrated)
+if [ -z "$(getv PLEX_MEDIA_DIRS)" ] || [ "$(getv PLEX_MEDIA_DIRS)" = "$EXAMPLE_MEDIA" ]; then
+  legacy="$(getv PLEX_MEDIA_DIR)"
+  if [ -n "$legacy" ] && [ "$legacy" != "$EXAMPLE_MEDIA" ]; then setv PLEX_MEDIA_DIRS "$legacy"; echo "migrated PLEX_MEDIA_DIR to PLEX_MEDIA_DIRS"; fi
 fi
+python3 - <<'PY'
+import re
+s = open('.env').read(); s = re.sub(r'^PLEX_MEDIA_DIR=.*\n', '', s, flags=re.M); open('.env', 'w').write(s)
+PY
+MEDIA_DIRS="$(getv PLEX_MEDIA_DIRS)"
+if [ -z "$MEDIA_DIRS" ] || [ "$MEDIA_DIRS" = "$EXAMPLE_MEDIA" ]; then
+  echo "Edit .env and set PLEX_MEDIA_DIRS to your media root(s) (':'-separated), then re-run ./setup-host.sh"; exit 1
+fi
+IFS=':' read -r -a _media <<< "$MEDIA_DIRS"
+for d in "${_media[@]}"; do [ -d "$d" ] || { echo "media directory does not exist: $d (check PLEX_MEDIA_DIRS in .env)"; exit 1; }; done
+# one read-only bind mount per root, loaded automatically through COMPOSE_FILE
+python3 -c "import sys; sys.path.insert(0, 'runner'); import envconf; open('docker-compose.media.yml', 'w').write(envconf.media_compose_yaml(envconf.parse_media_dirs(sys.argv[1])))" "$MEDIA_DIRS"
+case "$(getv COMPOSE_FILE)" in *docker-compose.media.yml*) ;; *) setv COMPOSE_FILE "docker-compose.yml:docker-compose.media.yml" ;; esac
+echo "media roots: ${#_media[@]} (mounted read-only; see docker-compose.media.yml)"
 appver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist" 2>/dev/null || true)"
 case "$(getv PLEX_VERSION)" in "$appver"*) ;; *) echo "WARNING: PLEX_VERSION ($(getv PLEX_VERSION)) does not match the installed app ($appver). They must be the same version." ;; esac
 

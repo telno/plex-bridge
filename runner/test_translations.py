@@ -12,7 +12,9 @@ sys.argv = [sys.argv[0]]
 # Hermetic: never depend on (or write into) the real .env, token or log directory.
 import tempfile
 _tmp = tempfile.mkdtemp(prefix="plex-runner-test-")
-os.environ["PLEX_MEDIA_DIR"] = os.path.join(_tmp, "media"); os.makedirs(os.environ["PLEX_MEDIA_DIR"], exist_ok=True)
+_media = [os.path.join(_tmp, "movies"), os.path.join(_tmp, "tv shows")]   # two roots, one with a space
+for _m in _media: os.makedirs(_m, exist_ok=True)
+os.environ["PLEX_MEDIA_DIRS"] = ":".join(_media)
 os.environ["BRIDGE_TOKEN"] = "test-token"; os.environ["PLEX_RUNNER_LOGDIR"] = os.path.join(_tmp, "logs")
 _spec = importlib.util.spec_from_file_location("plex_runner", os.path.join(HERE, "plex-runner.py"))
 R = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(R)
@@ -92,7 +94,7 @@ class Validation(unittest.TestCase):
         self.assertIn("protocol not allowed", R.check_args(["-i", "http://evil.example/x"]))
 
     def test_allows_media_and_pms_urls(self):
-        self.assertIsNone(R.check_args(["-i", os.path.join(R.MEDIA, "x.mkv"), "-progressurl", "http://127.0.0.1:32400/video/:/transcode/session/a/b/progress"]))
+        self.assertIsNone(R.check_args(["-i", os.path.join(R.MEDIA_DIRS[0], "x.mkv"), "-progressurl", "http://127.0.0.1:32400/video/:/transcode/session/a/b/progress"]))
 
     def test_redaction(self):
         self.assertNotIn("SECRET", R.redact("http://x/?X-Plex-Token=SECRET&a=1"))
@@ -102,6 +104,44 @@ class Validation(unittest.TestCase):
         env = R.build_env({"X_PLEX_TOKEN": "t", "PLEX_UID": "1", "PATH": "/evil", "LD_PRELOAD": "x", "FOO": "bar"})
         self.assertIn("X_PLEX_TOKEN", env); self.assertNotIn("LD_PRELOAD", env); self.assertNotIn("FOO", env)
         self.assertEqual(env["PATH"], "/usr/bin:/bin"); self.assertNotIn("PLEX_UID", env)
+
+
+class MediaRoots(unittest.TestCase):
+    def test_every_root_is_readable_and_other_paths_are_not(self):
+        self.assertEqual(len(R.MEDIA_DIRS), 2)
+        for root in R.MEDIA_DIRS: self.assertIsNone(R.check_args(["-i", os.path.join(root, "a", "b.mkv")]))
+        self.assertIn("path not allowed", R.check_args(["-i", os.path.join(_tmp, "elsewhere", "x.mkv")]))
+
+    def test_parse_dedupes_normalises_and_ignores_blanks(self):
+        self.assertEqual(R.envconf.parse_media_dirs("/a/b/:/c::/a/b: "), ["/a/b", "/c"])
+        self.assertEqual(R.envconf.parse_media_dirs(""), [])
+
+    def test_compose_fragment_has_one_readonly_mount_per_root_and_quotes_paths(self):
+        y = R.envconf.media_compose_yaml(["/Volumes/Movies", '/Users/x/My "TV" Shows'])
+        self.assertEqual(y.count("type: bind"), 2); self.assertEqual(y.count("read_only: true"), 2)
+        self.assertIn('source: "/Volumes/Movies"', y); self.assertIn('target: "/Users/x/My \\"TV\\" Shows"', y)
+
+    def test_profile_allows_every_root_and_their_parents(self):
+        old = (R.PROFILE, R.SUPPORT)
+        try:
+            R.SUPPORT = os.path.join(_tmp, "support"); R.PROFILE = os.path.join(R.SUPPORT, "transcoder.sb")
+            R.render_profile(); text = open(R.PROFILE).read()
+        finally:
+            R.PROFILE, R.SUPPORT = old
+        for root in R.MEDIA_DIRS:
+            self.assertIn('(subpath "%s")' % root, text)
+            self.assertIn('(literal "%s")' % os.path.dirname(root), text)
+        self.assertNotIn(";;MEDIA_ROOTS;;", text); self.assertNotIn(";;ANCESTORS;;", text)
+        comments = [l for l in text.splitlines() if l.startswith(";;")]
+        for root in R.MEDIA_DIRS: self.assertFalse(any(root in l for l in comments))   # nothing substituted inside comments
+
+    def test_config_validation_reports_missing_roots(self):
+        old = R.MEDIA_DIRS
+        try:
+            R.MEDIA_DIRS = old + ["/definitely/not/here"]
+            self.assertTrue(any("/definitely/not/here" in p for p in R.validate_config()))
+        finally:
+            R.MEDIA_DIRS = old
 
 
 class Diff(unittest.TestCase):

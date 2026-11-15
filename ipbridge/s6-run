@@ -1,0 +1,14 @@
+#!/usr/bin/with-contenv bash
+# s6 service inside the Plex container: the "back" half of plex-ipbridge (see ipbridge/main.go).
+# Policy route: Plex answers a client-sourced loopback connection from 127.0.0.1 (or ::1) to the client's address;
+# this sends those replies back to the local socket that opened it instead of out through eth0.
+# s6 restarts this script whenever it exits, so every step is idempotent and a failure is retried, not fatal.
+ip rule del pref 100 2>/dev/null
+if ! { ip rule add pref 100 from 127.0.0.0/8 iif lo lookup 123 && ip route replace local 0.0.0.0/0 dev lo table 123; }; then
+  echo "ipbridge: cannot install the policy route (is NET_ADMIN in cap_add?); retrying in 10 s" >&2
+  sleep 10; exit 1
+fi
+# IPv6 clients: best effort (they fall back to the gateway address if this is unavailable)
+ip -6 rule del pref 100 2>/dev/null
+ip -6 rule add pref 100 from ::1/128 iif lo lookup 123 2>/dev/null && ip -6 route replace local ::/0 dev lo table 123 2>/dev/null
+exec /usr/local/bin/plex-ipbridge back

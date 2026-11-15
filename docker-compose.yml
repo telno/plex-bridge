@@ -10,7 +10,10 @@ services:
     container_name: plex
     restart: unless-stopped
     ports:
-      - "32400:32400"
+      # Not 32400: OrbStack's forwarder would hide every client behind its gateway address. The host half of
+      # plex-ipbridge (LaunchAgent) owns :32400 on the Mac and hands connections, with the real client address,
+      # to the container half on this loopback-only port. See README "Client IPs and OrbStack".
+      - "127.0.0.1:${PLEX_IPBRIDGE_PORT:-32390}:32390"
     environment:
       TZ: ${TZ:-UTC}
       PLEX_UID: "${PLEX_UID:-501}"    # match the macOS user so the shared transcode dir is writable by both
@@ -18,6 +21,7 @@ services:
       ADVERTISE_IP: "http://${PLEX_LAN_IP:?set PLEX_LAN_IP in .env}:32400/"
       PLEX_RUNNER_URL: "http://host.docker.internal:${PLEX_RUNNER_PORT:-32499}"
       BRIDGE_TOKEN: ${BRIDGE_TOKEN:?run ./setup-host.sh to generate BRIDGE_TOKEN}
+      IPBRIDGE_TOKEN: ${IPBRIDGE_TOKEN:?run ./setup-host.sh to generate IPBRIDGE_TOKEN}
     volumes:
       - plex_config:/config           # seeded once from the macOS install by ./seed-config.sh
       # media roots: read-only bind mounts at the same absolute paths as on the host come from docker-compose.media.yml,
@@ -25,10 +29,19 @@ services:
       # transcode scratch dir shared with the host transcoder (same absolute path on both sides)
       - ${PLEX_PROJECT_DIR:?run ./setup-host.sh to set PLEX_PROJECT_DIR}/transcode:/transcode
       - ${PLEX_PROJECT_DIR}/transcode:${PLEX_PROJECT_DIR}/transcode
+    # End to end: ipbridge back half -> Plex /identity (replaces the image's Plex-only check). `docker ps` shows the result.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/plex-ipbridge", "check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
-    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER, KILL]
+    # NET_ADMIN is for the root-owned ipbridge service only (policy route + IP_TRANSPARENT sockets). Plex itself runs
+    # as PLEX_UID with no capabilities, and no-new-privileges stops it from regaining any.
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER, KILL, NET_ADMIN]
 volumes:
   plex_config:
     name: plex_config

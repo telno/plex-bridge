@@ -2,7 +2,8 @@
 # One-time (re-runnable) setup of the macOS host side of the transcode bridge.
 #
 #   ./setup-host.sh                  create .env if missing and fill in detectable values, check prerequisites,
-#                                    copy the macOS codec bundles, generate the shared secret, install + start the runner
+#                                    copy the macOS codec bundles, generate the shared secrets, install + start the runner
+#                                    and plex-ipbridge (the :32400 listener that passes real client addresses to Plex)
 #   ./setup-host.sh --daily-review   additionally install the nightly review LaunchAgent (see README)
 #
 # Prerequisites: "Plex Media Server.app" in /Applications (installed, never launched long-term: only its Plex Transcoder
@@ -38,6 +39,7 @@ fi
 [ "$(getv PLEX_PROJECT_DIR)" = "/path/to/this/project" ] && setv PLEX_PROJECT_DIR "$PROJECT"
 if [ "$(getv PLEX_LAN_IP)" = "192.168.1.10" ]; then ip="$(ipconfig getifaddr en0 2>/dev/null || true)"; [ -n "$ip" ] && setv PLEX_LAN_IP "$ip"; fi
 if [ -z "$(getv BRIDGE_TOKEN)" ]; then setv BRIDGE_TOKEN "$(head -c 32 /dev/urandom | base64 | tr -d '\n=/+')"; echo "generated BRIDGE_TOKEN"; fi
+if [ -z "$(getv IPBRIDGE_TOKEN)" ]; then setv IPBRIDGE_TOKEN "$(head -c 32 /dev/urandom | base64 | tr -d '\n=/+')"; echo "generated IPBRIDGE_TOKEN"; fi
 chmod 600 .env
 
 # media roots: PLEX_MEDIA_DIRS is a ":"-separated list (the old single PLEX_MEDIA_DIR is migrated)
@@ -72,13 +74,26 @@ if ! ls host-support/Codecs/*darwin* >/dev/null 2>&1; then
   fi
 fi
 
-# 3. LaunchAgents rendered from templates
+# 3. host half of plex-ipbridge (real client addresses): built with the local Go toolchain, or in a container without one
+case "$(uname -m)" in arm64) goarch=arm64 ;; *) goarch=amd64 ;; esac
+if command -v go >/dev/null 2>&1; then
+  (cd ipbridge && CGO_ENABLED=0 GOOS=darwin GOARCH=$goarch go build -trimpath -o ../host-support/plex-ipbridge.new .)
+else
+  docker run --rm -v "$PROJECT/ipbridge:/src:ro" -v "$PROJECT/host-support:/out" -w /src -e CGO_ENABLED=0 -e GOOS=darwin -e GOARCH=$goarch \
+    -e GOCACHE=/tmp/gocache golang:1.27-alpine go build -trimpath -o /out/plex-ipbridge.new .
+fi
+mv -f host-support/plex-ipbridge.new host-support/plex-ipbridge   # atomic: never rewrite the running binary in place
+echo "built host-support/plex-ipbridge"
+
+# 4. LaunchAgents rendered from templates
 mkdir -p "$AGENTS"
 render() { sed "s#@PROJECT@#$PROJECT#g" "launchd/$1.plist.in" > "$AGENTS/$1.plist"; launchctl bootout "gui/$(id -u)/$1" 2>/dev/null || true; launchctl bootstrap "gui/$(id -u)" "$AGENTS/$1.plist"; }
 render local.plex-runner
 sleep 2
 PORT="$(getv PLEX_RUNNER_PORT)"; PORT="${PORT:-32499}"
 curl -sf "http://127.0.0.1:$PORT/health" >/dev/null && echo "runner is up on 127.0.0.1:$PORT" || { echo "runner did not start; see runner/runner.out and runner/logs/runner.log"; exit 1; }
+# It owns :32400 on the Mac. If an older container still publishes 32400 it retries every 10 s until `docker compose up -d`.
+render local.plex-ipbridge; echo "installed plex-ipbridge (listens on :32400; log: runner/ipbridge.out)"
 
 if [ "${1:-}" = "--daily-review" ]; then
   [ -f ops/mail.conf ] || { cp ops/mail.conf.example ops/mail.conf; chmod 600 ops/mail.conf; echo "created ops/mail.conf: edit MAIL_TO / MAIL_FROM to enable email reports"; }

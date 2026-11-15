@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: ./setup-host.sh replaces @PROJECT@ and installs the result in ~/Library/LaunchAgents/ -->
+<!-- Host half of plex-ipbridge: owns :32400 on the Mac and forwards to the container with the real client address. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>local.plex-ipbridge</string>
+  <key>ProgramArguments</key><array>
+    <string>@PROJECT@/host-support/plex-ipbridge</string><string>front</string><string>@PROJECT@/.env</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>2</integer>
+  <!-- two descriptors per proxied connection; launchd's default soft limit is 256 -->
+  <key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>8192</integer></dict>
+  <key>StandardOutPath</key><string>@PROJECT@/runner/ipbridge.out</string>
+  <key>StandardErrorPath</key><string>@PROJECT@/runner/ipbridge.out</string>
+</dict></plist>

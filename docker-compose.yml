@@ -1,0 +1,34 @@
+# All site-specific values come from .env (see .env.example); run ./setup-host.sh first.
+name: plex
+services:
+  plex:
+    build:
+      context: .
+      args:
+        PLEX_VERSION: ${PLEX_VERSION:?set PLEX_VERSION in .env}
+    image: plex-bridged:${PLEX_VERSION}
+    container_name: plex
+    restart: unless-stopped
+    ports:
+      - "32400:32400"
+    environment:
+      TZ: ${TZ:-UTC}
+      PLEX_UID: "${PLEX_UID:-501}"    # match the macOS user so the shared transcode dir is writable by both
+      PLEX_GID: "${PLEX_GID:-20}"
+      ADVERTISE_IP: "http://${PLEX_LAN_IP:?set PLEX_LAN_IP in .env}:32400/"
+      PLEX_RUNNER_URL: "http://host.docker.internal:${PLEX_RUNNER_PORT:-32499}"
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?run ./setup-host.sh to generate BRIDGE_TOKEN}
+    volumes:
+      - plex_config:/config           # seeded once from the macOS install by ./seed-config.sh
+      # media: read-only, mounted at the same absolute path as on the host (library paths stay valid)
+      - ${PLEX_MEDIA_DIR:?set PLEX_MEDIA_DIR in .env}:${PLEX_MEDIA_DIR}:ro
+      # transcode scratch dir shared with the host transcoder (same absolute path on both sides)
+      - ${PLEX_PROJECT_DIR:?run ./setup-host.sh to set PLEX_PROJECT_DIR}/transcode:/transcode
+      - ${PLEX_PROJECT_DIR}/transcode:${PLEX_PROJECT_DIR}/transcode
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER, KILL]
+volumes:
+  plex_config:
+    name: plex_config

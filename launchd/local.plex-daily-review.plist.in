@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: ./setup-host.sh --daily-review replaces @PROJECT@ and installs the result in ~/Library/LaunchAgents/ -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>local.plex-daily-review</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>@PROJECT@/ops/daily-review.sh</string></array>
+  <key>WorkingDirectory</key><string>@PROJECT@</string>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>17</integer></dict>
+  <key>StandardOutPath</key><string>@PROJECT@/reports/launchd.log</string>
+  <key>StandardErrorPath</key><string>@PROJECT@/reports/launchd.log</string>
+</dict></plist>

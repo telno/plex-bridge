@@ -1,0 +1,15 @@
+# --- your configuration and secrets (see .env.example) ---
+.env
+ops/mail.conf
+docker-compose.override.yml
+
+# --- runtime state ---
+host-support/
+transcode/
+runner/logs/
+runner/*.log
+runner/*.out
+reports/
+__pycache__/
+*.pyc
+.DS_Store

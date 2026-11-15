@@ -1,0 +1,29 @@
+;; Seatbelt profile TEMPLATE for the host-side Plex Transcoder and the EAE helper.
+;; plex-runner.py renders it at startup into host-support/transcoder.sb, replacing the ;;ANCESTORS;; marker with
+;; (literal "...") entries for the project and media directories and every parent of them (SQLite/ffmpeg lstat each
+;; path component). Params: PROJECT (project dir), MEDIA (media root), TRANSCODE (shared transcode dir)
+(version 1)
+(allow default)
+
+;; Reads: no user data except the project's support files, transcode dir and media
+(deny file-read* (subpath "/Users"))
+(deny file-read* (subpath "/Volumes"))
+(allow file-read-metadata ;;ANCESTORS;;)
+(allow file-read* (subpath (string-append (param "PROJECT") "/host-support")) (subpath (param "TRANSCODE")))
+(allow file-read* (subpath (param "MEDIA")))
+
+;; Writes: only the transcode dir, the transcoder's scratch home, temp
+(deny file-write* (subpath "/"))
+(allow file-write*
+  (subpath (param "TRANSCODE"))
+  (subpath (string-append (param "PROJECT") "/host-support/home"))
+  (subpath "/private/var/folders")
+  (literal "/dev/null") (literal "/dev/tty") (literal "/dev/dtracehelper")
+  (regex #"^/dev/(fd|ttys?)[0-9]*$"))
+
+;; Network: loopback only (callbacks to PMS on 127.0.0.1:32400); no internet, no LAN
+(deny network-outbound)
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+(deny network-inbound)
+(allow network-inbound (local ip "localhost:*"))

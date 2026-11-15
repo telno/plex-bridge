@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: ./setup-host.sh replaces @PROJECT@ and installs the result in ~/Library/LaunchAgents/ -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>local.plex-runner</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/python3</string><string>@PROJECT@/runner/plex-runner.py</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>@PROJECT@/runner/runner.out</string>
+  <key>StandardErrorPath</key><string>@PROJECT@/runner/runner.out</string>
+</dict></plist>

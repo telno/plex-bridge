@@ -3,3 +3,5 @@ MAIL_TO="you@example.com"
 MAIL_FROM="account-address-configured-in-Mail.app@example.com"
 # always = email every day (including "all clear"); attention = only when the status is not "all clear"
 MAIL_WHEN="always"
+# rich = formatted email (default); plain = the markdown report as text
+MAIL_FORMAT="rich"

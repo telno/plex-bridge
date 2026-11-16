@@ -10,9 +10,9 @@ services:
     container_name: plex
     restart: unless-stopped
     ports:
-      # Not 32400: OrbStack's forwarder would hide every client behind its gateway address. The host half of
+      # Not 32400: the engine's port forwarder would hide every client behind its gateway address. The host half of
       # plex-ipbridge (LaunchAgent) owns :32400 on the Mac and hands connections, with the real client address,
-      # to the container half on this loopback-only port. See README "Client IPs and OrbStack".
+      # to the container half on this loopback-only port. See README "Real client addresses".
       - "127.0.0.1:${PLEX_IPBRIDGE_PORT:-32390}:32390"
     environment:
       TZ: ${TZ:-UTC}

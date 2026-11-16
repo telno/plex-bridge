@@ -7,7 +7,7 @@
 #   ./setup-host.sh --daily-review   additionally install the nightly review LaunchAgent (see README)
 #
 # Prerequisites: "Plex Media Server.app" in /Applications (installed, never launched long-term: only its Plex Transcoder
-# is used) and Docker/OrbStack. Edit .env (at least PLEX_MEDIA_DIRS) before the first full run.
+# is used) and a Docker engine with Compose (OrbStack or Docker Desktop). Edit .env (at least PLEX_MEDIA_DIRS) before the first full run.
 set -euo pipefail
 cd "$(dirname "$0")"
 PROJECT="$(pwd)"

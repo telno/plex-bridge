@@ -57,14 +57,14 @@ func TestSelfAddr(t *testing.T) {
 }
 
 func TestFrontClaim(t *testing.T) {
-	own := []net.IP{net.ParseIP("192.168.0.170")}
+	own := []net.IP{net.ParseIP("192.168.1.10")}
 	cases := map[string]string{
 		"192.168.0.55":        "192.168.0.55",
 		"::ffff:192.168.0.55": "192.168.0.55",
 		"203.0.113.7":         "203.0.113.7",
 		"127.0.0.1":           localMark,
 		"::1":                 localMark,
-		"192.168.0.170":       localMark,
+		"192.168.1.10":        localMark,
 	}
 	for in, want := range cases {
 		if got := frontClaim(&net.TCPAddr{IP: net.ParseIP(in), Port: 1234}, own); got != want {

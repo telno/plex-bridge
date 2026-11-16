@@ -277,7 +277,7 @@ class H(BaseHTTPRequestHandler):
 
     def _relay(self):
         # /relay/<jobid>/<video/:/transcode/session/...>  ->  PMS, with the session token added.
-        # (PMS only trusts token-less callbacks from loopback; OrbStack's port forwarder makes them look remote.)
+        # (PMS only trusts token-less callbacks from loopback, and callbacks from the Mac do not reach it as loopback.)
         parts = self.path.split("/", 3)
         job = RELAYS.get(parts[2]) if len(parts) == 4 else None
         if not job or not parts[3].startswith("video/:/transcode/session/"): return self._deny(404, "no")

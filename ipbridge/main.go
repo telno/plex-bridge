@@ -1,7 +1,8 @@
-// plex-ipbridge: lets Plex in an OrbStack container see real client addresses.
+// plex-ipbridge: lets Plex in a container on macOS see real client addresses.
 //
-// OrbStack's port forwarder rewrites the source of every published-port connection to its gateway address, so Plex
-// cannot tell clients apart (or LAN from WAN). This program replaces the published port with two halves:
+// Docker engines on macOS (OrbStack, Docker Desktop) forward published ports through a proxy that rewrites the source
+// of every connection to a gateway address, so Plex cannot tell clients apart (or LAN from WAN). This program replaces
+// the published port with two halves:
 //
 //	front  (macOS host, LaunchAgent)  listens on :32400, where the real peer address is still visible, and forwards
 //	                                  each connection to the back half with a one-line preface naming that address.
@@ -12,11 +13,10 @@
 // Preface: "PLEXIP1 <token> <client-ip|local>\n". The token (IPBRIDGE_TOKEN) stops other local processes from
 // claiming an arbitrary address. Plex trusts loopback peers without authentication, so the back half never opens a
 // loopback-sourced connection: anything it cannot or must not impersonate arrives from the container's own eth0
-// address, which Plex treats like the gateway address it saw for every client before this bridge existed (same
-// subnet, authentication required).
+// address, which is on Plex's own subnet but not trusted: authentication is required.
 //
 // Failure handling: both halves are supervised (launchd KeepAlive on the host, s6 in the container) and are restarted
-// if they exit. Neither keeps state, so a restart of either half, of Plex, of the container or of OrbStack only drops
+// if they exit. Neither keeps state, so a restart of either half, of Plex, of the container or of the engine only drops
 // the connections open at that moment; clients reconnect. A panic in one connection is contained to that connection,
 // every dial and the preface exchange have timeouts, and dead peers are reaped by TCP keepalive.
 package main
